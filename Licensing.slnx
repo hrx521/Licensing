@@ -1,0 +1,8 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Licensing.Client/Licensing.Client.csproj" />
+    <Project Path="src/Licensing.WinForms/Licensing.WinForms.csproj" />
+    <Project Path="src/Licensing.Sample/Licensing.Sample.csproj" />
+    <Project Path="src/Licensing.Server/Licensing.Server.csproj" />
+  </Folder>
+</Solution>

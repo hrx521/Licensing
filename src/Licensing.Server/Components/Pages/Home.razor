@@ -1,0 +1,33 @@
+﻿@page "/"
+@attribute [Authorize]
+@inject LicenseAdminService Admin
+
+<PageTitle>@Ui.T("概览", "Overview")</PageTitle>
+<h1>@Ui.T("概览", "Overview")</h1>
+@if (stats == null)
+{
+    <p>@Ui.T("正在读取…", "Loading…")</p>
+}
+else
+{
+    <div class="stats">
+        <div><b>@stats.Customers</b><span>@Ui.T("可见客户", "Visible customers")</span></div>
+        <div><b>@stats.Licenses</b><span>@Ui.T("未吊销许可", "Licenses not revoked")</span></div>
+        <div><b>@stats.Activations</b><span>@Ui.T("未释放激活", "Open activations")</span></div>
+        <div><b>@stats.RehostsThisYear</b><span>@Ui.T("本年客户换机", "Client rehosts this year")</span></div>
+    </div>
+}
+<p class="hint">@Ui.T("产品目录从空白开始，由超级管理员在「产品目录」里录入。", "The catalog starts empty. A super admin adds products on the Catalog page.")</p>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    HomeStats? stats;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState;
+        stats = await Admin.StatsAsync(state.User);
+    }
+}

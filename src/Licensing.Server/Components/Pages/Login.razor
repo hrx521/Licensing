@@ -1,0 +1,30 @@
+@page "/login"
+@layout LoginLayout
+@attribute [AllowAnonymous]
+
+<PageTitle>@Ui.T("登录", "Sign in")</PageTitle>
+<h1>@Ui.T("授权管理", "License admin")</h1>
+@if (Error == "lockout")
+{
+    <p class="err">@Ui.T("登录失败次数过多，请 15 分钟后再试。", "Too many attempts. Try again in 15 minutes.")</p>
+}
+else if (Error == "1")
+{
+    <p class="err">@Ui.T("邮箱或密码不正确。", "Email or password is incorrect.")</p>
+}
+<form method="post" action="/account/login" data-enhance="false">
+    <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+    <label>@Ui.T("邮箱", "Email")</label>
+    <input name="email" type="email" autocomplete="username" required />
+    <label>@Ui.T("密码", "Password")</label>
+    <input name="password" type="password" autocomplete="current-password" required />
+    <button type="submit">@Ui.T("登录", "Sign in")</button>
+</form>
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")]
+    public string? Error { get; set; }
+
+    [SupplyParameterFromQuery(Name = "returnUrl")]
+    public string? ReturnUrl { get; set; }
+}

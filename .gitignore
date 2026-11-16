@@ -1,0 +1,4 @@
+bin/
+obj/
+src/Licensing.Server/storage/
+*.user

@@ -1,0 +1,102 @@
+@page "/import"
+@attribute [Authorize]
+@inject LicenseAdminService Admin
+
+<PageTitle>@Ui.T("导入老码", "Import codes")</PageTitle>
+<h1>@Ui.T("导入老码", "Import codes")</h1>
+<p class="hint">@Ui.T("每行一个已经发出的注册码。比对时忽略空白和横线，不区分大小写，不绑定机器。", "One existing code per line. Matching ignores spaces and hyphens, ignores case, and does not bind a machine.")</p>
+@if (!string.IsNullOrEmpty(error))
+{
+    <p class="err">@error</p>
+}
+<form class="grid-form" @onsubmit="Run">
+    <label>@Ui.T("客户", "Customer")
+        <select @bind="customerId">
+            @foreach (var customer in customers)
+            {
+                <option value="@customer.Id">@customer.Name</option>
+            }
+        </select>
+    </label>
+    <label>@Ui.T("产品", "Product")
+        <select @bind="productId" @bind:after="LoadCatalog">
+            @foreach (var product in products)
+            {
+                <option value="@product.Id">@product.Name</option>
+            }
+        </select>
+    </label>
+    <label>@Ui.T("版本", "Edition")
+        <select @bind="edition">
+            @foreach (var item in editions)
+            {
+                <option value="@item.Code">@item.Name</option>
+            }
+        </select>
+    </label>
+    <label>@Ui.T("功能代码，用逗号分隔", "Feature codes, comma separated")<input @bind="featureText" /></label>
+    <label class="check"><input type="checkbox" @bind="perpetual" /> @Ui.T("永久许可", "Perpetual")</label>
+    @if (!perpetual)
+    {
+        <label>@Ui.T("到期日", "End date")<input type="date" @bind="endDate" /></label>
+    }
+    <label>@Ui.T("老码", "Codes")<textarea @bind="codes" rows="8"></textarea></label>
+    <button type="submit">@Ui.T("导入", "Import")</button>
+</form>
+<ul>
+    @foreach (var line in results)
+    {
+        <li class="@(line.Ok ? "ok" : "err")">@line.Line @line.Message</li>
+    }
+</ul>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+    List<CustomerRow> customers = new();
+    List<ProductDetail> products = new();
+    List<CodeName> editions = new();
+    List<ImportLineResult> results = new();
+    Guid customerId, productId;
+    string edition = "", featureText = "", codes = "", error = "";
+    DateOnly? endDate;
+    bool perpetual = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState;
+        customers = await Admin.CustomersAsync(state.User);
+        products = await Admin.ProductsAsync();
+        if (customers.Count > 0)
+            customerId = customers[0].Id;
+        if (products.Count > 0)
+        {
+            productId = products[0].Id;
+            LoadCatalog();
+        }
+    }
+
+    void LoadCatalog()
+    {
+        editions = products.SingleOrDefault(x => x.Id == productId)?.Editions ?? new();
+        edition = editions.FirstOrDefault()?.Code ?? "";
+    }
+
+    async Task Run()
+    {
+        var state = await AuthState;
+        DateTimeOffset? ends = perpetual || endDate == null
+            ? null
+            : new DateTimeOffset(endDate.Value.ToDateTime(new TimeOnly(23, 59, 59)), TimeSpan.Zero);
+        results = await Admin.ImportAsync(
+            state.User,
+            customerId,
+            productId,
+            edition,
+            featureText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
+            perpetual,
+            ends,
+            0,
+            codes);
+        error = "";
+    }
+}

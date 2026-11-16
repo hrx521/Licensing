@@ -1,0 +1,5 @@
+@page "/denied"
+@attribute [Authorize]
+
+<h1>@Ui.T("无权访问", "Access denied")</h1>
+<p>@Ui.T("当前账号不能打开这个页面。", "This account cannot open this page.")</p>

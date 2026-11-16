@@ -1,0 +1,157 @@
+@page "/customers/{CustomerId:guid}/licenses/new"
+@attribute [Authorize]
+@inject LicenseAdminService Admin
+@inject NavigationManager Nav
+
+<PageTitle>@Ui.T("签发许可", "Issue license")</PageTitle>
+<h1>@Ui.T("签发许可", "Issue license")</h1>
+@if (!string.IsNullOrEmpty(issued))
+{
+    <p class="ok">@Ui.T("已签发。请复制许可码。", "Issued. Copy the license key.")</p>
+    <p><code class="key">@issued</code></p>
+}
+@if (!string.IsNullOrEmpty(error))
+{
+    <p class="err">@error</p>
+}
+@if (products.Count == 0)
+{
+    <p>@Ui.T("还没有产品。请超级管理员先在产品目录里添加产品和至少一个版本。", "There is no product yet. A super admin must add a product and at least one edition.")</p>
+}
+else
+{
+    <form class="grid-form" @onsubmit="Issue">
+        <label>@Ui.T("产品", "Product")
+            <select @bind="productId" @bind:after="LoadCatalog">
+                @foreach (var product in products)
+                {
+                    <option value="@product.Id">@product.Name (@product.PublicId)</option>
+                }
+            </select>
+        </label>
+        <label>@Ui.T("种类", "Kind")
+            <select @bind="kind">
+                @foreach (var value in Enum.GetValues<LicenseKind>())
+                {
+                    <option value="@value">@Ui.Kind(value)</option>
+                }
+            </select>
+        </label>
+        <label>@Ui.T("版本", "Edition")
+            <select @bind="edition">
+                @foreach (var item in editions)
+                {
+                    <option value="@item.Code">@item.Name (@item.Code)</option>
+                }
+            </select>
+        </label>
+        <fieldset>
+            <legend>@Ui.T("功能", "Features")</legend>
+            @foreach (var item in features)
+            {
+                <label class="check"><input type="checkbox" checked="@picked.Contains(item.Code)" @onchange="e => Toggle(item.Code, e.Value is true)" /> @item.Name (@item.Code)</label>
+            }
+        </fieldset>
+        @if (kind is LicenseKind.MachinePool or LicenseKind.Floating)
+        {
+            <label>@Ui.T("席位数", "Seats")<input type="number" min="1" @bind="seats" /></label>
+        }
+        @if (kind == LicenseKind.Dongle)
+        {
+            <label>@Ui.T("锁号", "Dongle id")<input @bind="dongleId" /></label>
+        }
+        @if (kind == LicenseKind.LegacyToken)
+        {
+            <label>@Ui.T("老注册码", "Existing code")<input @bind="legacy" /></label>
+        }
+        <label>@Ui.T("使用人备注", "Person label")<input @bind="person" /></label>
+        <label class="check"><input type="checkbox" @bind="perpetual" /> @Ui.T("永久许可", "Perpetual")</label>
+        @if (!perpetual)
+        {
+            <label>@Ui.T("到期日（该日 UTC 结束后失效）", "End date (stops after that UTC day)")<input type="date" @bind="endDate" /></label>
+        }
+        <label>@Ui.T("宽限天数", "Grace days")<input type="number" min="1" @bind="graceDays" /></label>
+        <label>@Ui.T("心跳小时", "Heartbeat hours")<input type="number" min="1" @bind="heartbeatHours" /></label>
+        @if (kind == LicenseKind.Floating)
+        {
+            <label>@Ui.T("席位释放小时", "Seat release hours")<input type="number" min="1" @bind="releaseHours" /></label>
+        }
+        @if (kind is LicenseKind.SingleMachine or LicenseKind.MachinePool)
+        {
+            <label>@Ui.T("每年自助换机次数，0 表示只能后台换", "Self-service machine changes per year; 0 means admin only")<input type="number" min="0" @bind="rehostLimit" /></label>
+        }
+        <button type="submit">@Ui.T("签发", "Issue")</button>
+    </form>
+}
+
+@code {
+    [Parameter] public Guid CustomerId { get; set; }
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    List<ProductDetail> products = new();
+    List<CodeName> editions = new();
+    List<CodeName> features = new();
+    HashSet<string> picked = new(StringComparer.Ordinal);
+    Guid productId;
+    LicenseKind kind = LicenseKind.SingleMachine;
+    string edition = "";
+    string dongleId = "", legacy = "", person = "", error = "", issued = "";
+    DateOnly? endDate;
+    int seats = 5, graceDays = 7, heartbeatHours = 12, releaseHours = 12, rehostLimit;
+    bool perpetual = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        products = await Admin.ProductsAsync();
+        if (products.Count > 0)
+        {
+            productId = products[0].Id;
+            LoadCatalog();
+        }
+    }
+
+    void LoadCatalog()
+    {
+        var product = products.SingleOrDefault(x => x.Id == productId);
+        editions = product?.Editions ?? new();
+        features = product?.Features ?? new();
+        edition = editions.FirstOrDefault()?.Code ?? "";
+        picked.Clear();
+    }
+
+    void Toggle(string code, bool on)
+    {
+        if (on) picked.Add(code);
+        else picked.Remove(code);
+    }
+
+    async Task Issue()
+    {
+        var state = await AuthState;
+        DateTimeOffset? ends = perpetual || endDate == null
+            ? null
+            : new DateTimeOffset(endDate.Value.ToDateTime(new TimeOnly(23, 59, 59)), TimeSpan.Zero);
+        var result = await Admin.IssueAsync(state.User, new IssueInput
+        {
+            CustomerId = CustomerId,
+            ProductId = productId,
+            Kind = kind,
+            EditionCode = edition,
+            FeatureCodes = picked.ToList(),
+            SeatLimit = seats,
+            PersonLabel = person,
+            IsPerpetual = perpetual,
+            SubscriptionEndsAt = ends,
+            GraceDays = graceDays,
+            HeartbeatHours = heartbeatHours,
+            ReleaseHours = releaseHours,
+            RehostLimitPerYear = rehostLimit,
+            DongleId = dongleId,
+            LegacyCode = legacy
+        });
+        error = result.Error ?? "";
+        issued = result.Key ?? "";
+        if (result.Error == null && result.Key != null)
+            Nav.NavigateTo(Nav.Uri, forceLoad: false);
+    }
+}

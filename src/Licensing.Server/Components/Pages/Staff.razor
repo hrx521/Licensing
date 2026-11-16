@@ -1,0 +1,89 @@
+@page "/staff"
+@attribute [Authorize(Policy = "SuperAdmin")]
+@inject AccountService Accounts
+@inject LicenseAdminService Admin
+
+<PageTitle>@Ui.T("账号", "Accounts")</PageTitle>
+<h1>@Ui.T("内部账号", "Staff accounts")</h1>
+<p class="hint">@Ui.T("超级管理员看见全部客户。普通账号只看见分配给自己的客户，并可以在这些客户上签发和吊销。修改超级管理员标记后，需要重新登录才生效。", "Super admins see every customer. Other accounts see only assigned customers and can issue or revoke there. Super-admin changes apply at the next sign-in.")</p>
+@if (!string.IsNullOrEmpty(error))
+{
+    <p class="err">@error</p>
+}
+<form class="grid-form" @onsubmit="Create">
+    <label>@Ui.T("邮箱", "Email")<input @bind="email" /></label>
+    <label>@Ui.T("显示名", "Display name")<input @bind="displayName" /></label>
+    <label>@Ui.T("密码", "Password")<input type="password" @bind="password" /></label>
+    <label class="check"><input type="checkbox" @bind="superAdmin" /> @Ui.T("超级管理员", "Super admin")</label>
+    <button type="submit">@Ui.T("新建账号", "Create account")</button>
+</form>
+@foreach (var row in staff)
+{
+    <section>
+        <h2>@row.Email <span>@row.DisplayName</span> @(row.IsSuperAdmin ? Ui.T("超级管理员", "Super admin") : "")</h2>
+        @if (!row.IsSuperAdmin)
+        {
+            <form class="grid-form" @onsubmit="() => SaveAssignments(row)">
+                @foreach (var customer in customers)
+                {
+                    <label class="check"><input type="checkbox" checked="@row.CustomerIds.Contains(customer.Id)" @onchange="e => Toggle(row, customer.Id, e.Value is true)" /> @customer.Name</label>
+                }
+                <button type="submit">@Ui.T("保存可见客户", "Save visible customers")</button>
+            </form>
+        }
+        <form class="row" @onsubmit="() => Reset(row.Id)">
+            <input type="password" @bind="resetPassword" placeholder="@Ui.T("新密码", "New password")" />
+            <button type="submit">@Ui.T("重置密码", "Reset password")</button>
+        </form>
+    </section>
+}
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+    List<StaffRow> staff = new();
+    List<CustomerRow> customers = new();
+    string email = "", displayName = "", password = "", resetPassword = "", error = "";
+    bool superAdmin;
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    async Task Reload()
+    {
+        var state = await AuthState;
+        staff = await Accounts.ListAsync();
+        customers = await Admin.CustomersAsync(state.User);
+    }
+
+    async Task Create()
+    {
+        var state = await AuthState;
+        error = await Accounts.CreateAsync(email, displayName, password, superAdmin, Array.Empty<Guid>(), state.User) ?? "";
+        if (error.Length == 0)
+        {
+            email = displayName = password = "";
+            await Reload();
+        }
+    }
+
+    void Toggle(StaffRow row, Guid customerId, bool on)
+    {
+        if (on) row.CustomerIds.Add(customerId);
+        else row.CustomerIds.Remove(customerId);
+    }
+
+    async Task SaveAssignments(StaffRow row)
+    {
+        var state = await AuthState;
+        await Accounts.AssignAsync(row.Id, row.CustomerIds, state.User);
+        error = "";
+        await Reload();
+    }
+
+    async Task Reset(string id)
+    {
+        var state = await AuthState;
+        error = await Accounts.ResetPasswordAsync(id, resetPassword, state.User) ?? "";
+        if (error.Length == 0)
+            resetPassword = "";
+    }
+}

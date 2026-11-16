@@ -1,0 +1,41 @@
+@page "/audit"
+@attribute [Authorize]
+@inject LicenseAdminService Admin
+
+<PageTitle>@Ui.T("审计", "Audit")</PageTitle>
+<h1>@Ui.T("审计", "Audit")</h1>
+<p class="hint">@Ui.T("记录保留 3 年。心跳不写入审计。", "Records are kept for 3 years. Heartbeats are not audited.")</p>
+<table>
+    <thead>
+        <tr>
+            <th>UTC</th>
+            <th>@Ui.T("账号", "Account")</th>
+            <th>@Ui.T("动作", "Action")</th>
+            <th>@Ui.T("详情", "Detail")</th>
+            <th>IP</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var row in rows)
+        {
+            <tr>
+                <td>@row.At.UtcDateTime.ToString("yyyy-MM-dd HH:mm")</td>
+                <td>@row.Actor</td>
+                <td>@Ui.Action(row.Action)</td>
+                <td>@row.Detail</td>
+                <td>@row.Ip</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+    List<AuditRow> rows = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        var state = await AuthState;
+        rows = await Admin.AuditAsync(state.User);
+    }
+}

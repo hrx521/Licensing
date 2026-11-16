@@ -1,0 +1,66 @@
+@page "/customers"
+@attribute [Authorize]
+@inject LicenseAdminService Admin
+
+<PageTitle>@Ui.T("客户", "Customers")</PageTitle>
+<h1>@Ui.T("客户", "Customers")</h1>
+@if (!string.IsNullOrEmpty(error))
+{
+    <p class="err">@error</p>
+}
+<form class="grid-form" @onsubmit="Create">
+    <label>@Ui.T("名称", "Name")<input @bind="name" /></label>
+    <label>@Ui.T("邮箱", "Email")<input @bind="email" /></label>
+    <label>@Ui.T("公司", "Company")<input @bind="company" /></label>
+    <label>@Ui.T("电话", "Phone")<input @bind="phone" /></label>
+    <label>@Ui.T("备注", "Notes")<input @bind="notes" /></label>
+    <button type="submit">@Ui.T("新建客户", "Create customer")</button>
+</form>
+<table>
+    <thead>
+        <tr>
+            <th>@Ui.T("名称", "Name")</th>
+            <th>@Ui.T("公司", "Company")</th>
+            <th>@Ui.T("邮箱", "Email")</th>
+            <th>@Ui.T("许可", "Licenses")</th>
+        </tr>
+    </thead>
+    <tbody>
+        @foreach (var row in rows)
+        {
+            <tr>
+                <td><a href="@($"customers/{row.Id}")">@row.Name</a></td>
+                <td>@row.Company</td>
+                <td>@row.Email</td>
+                <td>@row.LicenseCount</td>
+            </tr>
+        }
+    </tbody>
+</table>
+
+@code {
+    [CascadingParameter]
+    private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    List<CustomerRow> rows = new();
+    string name = "", email = "", company = "", phone = "", notes = "", error = "";
+
+    protected override async Task OnInitializedAsync() => await Reload();
+
+    async Task Reload()
+    {
+        var state = await AuthState;
+        rows = await Admin.CustomersAsync(state.User);
+    }
+
+    async Task Create()
+    {
+        var state = await AuthState;
+        error = await Admin.SaveCustomerAsync(state.User, null, name, email, company, phone, notes) ?? "";
+        if (error.Length == 0)
+        {
+            name = email = company = phone = notes = "";
+            await Reload();
+        }
+    }
+}

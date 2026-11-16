@@ -1,0 +1,223 @@
+@page "/licenses/{LicenseId:guid}"
+@attribute [Authorize]
+@inject LicenseAdminService Admin
+@inject NavigationManager Nav
+
+<PageTitle>@Ui.T("许可", "License")</PageTitle>
+@if (detail == null)
+{
+    <p>@Ui.T("没有这张许可，或当前账号看不见。", "This license is missing or hidden from this account.")</p>
+}
+else
+{
+    <h1><code>@detail.KeyDisplay</code></h1>
+    <p>@detail.CustomerName · @detail.ProductName (@detail.PublicId) · @Ui.Kind(detail.Kind) · @Ui.State(detail.Status)</p>
+    <p>@Ui.T("本年已用换机次数", "Client rehosts used this year"): @detail.RehostsUsedThisYear / @detail.RehostLimitPerYear</p>
+    @if (!string.IsNullOrEmpty(message))
+    {
+        <p class="@(failed ? "err" : "ok")">@message</p>
+    }
+    @if (detail.Status != LicenseState.Revoked)
+    {
+        <form class="grid-form" @onsubmit="Save">
+            <label>@Ui.T("版本", "Edition")<input @bind="edition" /></label>
+            <label>@Ui.T("功能代码，用逗号分隔", "Feature codes, comma separated")<input @bind="featureText" /></label>
+            @if (detail.Kind is LicenseKind.MachinePool or LicenseKind.Floating)
+            {
+                <label>@Ui.T("席位数", "Seats")<input type="number" min="1" @bind="seats" /></label>
+            }
+            @if (detail.Kind == LicenseKind.Dongle)
+            {
+                <label>@Ui.T("锁号", "Dongle id")<input @bind="dongleId" /></label>
+            }
+            <label>@Ui.T("使用人备注", "Person label")<input @bind="person" /></label>
+            <label class="check"><input type="checkbox" @bind="perpetual" /> @Ui.T("永久许可", "Perpetual")</label>
+            @if (!perpetual)
+            {
+                <label>@Ui.T("到期日（该日 UTC 结束后失效）", "End date (stops after that UTC day)")<input type="date" @bind="endDate" /></label>
+            }
+            <label>@Ui.T("宽限天数", "Grace days")<input type="number" min="1" @bind="graceDays" /></label>
+            <label>@Ui.T("心跳小时", "Heartbeat hours")<input type="number" min="1" @bind="heartbeatHours" /></label>
+            <label>@Ui.T("席位释放小时", "Seat release hours")<input type="number" min="1" @bind="releaseHours" /></label>
+            <label>@Ui.T("每年自助换机次数", "Self-service changes per year")<input type="number" min="0" @bind="rehostLimit" /></label>
+            <button type="submit">@Ui.T("保存", "Save")</button>
+        </form>
+        <div class="row">
+            @if (detail.Status == LicenseState.Active)
+            {
+                <button @onclick="Suspend">@Ui.T("暂停", "Suspend")</button>
+            }
+            @if (detail.Status == LicenseState.Suspended)
+            {
+                <button @onclick="Resume">@Ui.T("恢复", "Resume")</button>
+            }
+            <button @onclick="Revoke">@Ui.T("吊销", "Revoke")</button>
+        </div>
+        @if (detail.Kind is LicenseKind.SingleMachine or LicenseKind.MachinePool)
+        {
+            <form class="row" @onsubmit="Move">
+                <input @bind="newMachine" placeholder="@Ui.T("新机器码", "New machine id")" />
+                <button type="submit">@Ui.T("后台换机", "Admin machine change")</button>
+            </form>
+        }
+        @if (detail.Kind == LicenseKind.SingleMachine && detail.Status == LicenseState.Active)
+        {
+            <h2>@Ui.T("离线授权文件", "Offline grant")</h2>
+            <p class="hint">@Ui.T("把客户抄来的机器码填在这里。生成文件时这台机器就被绑定。默认 365 天；订阅许可不会晚于订阅结束日。", "Enter the machine id the customer copied. Generating the file binds that machine. The default is 365 days, and a subscription file cannot outlast the subscription.")</p>
+            <form class="grid-form" method="post" action="@("/licenses/" + LicenseId + "/offline-file")" data-enhance="false">
+                <AntiforgeryToken />
+                <label>@Ui.T("机器码", "Machine id")<input name="machineId" @bind="offlineMachine" /></label>
+                <label>@Ui.T("文件到期日（该日 UTC 结束后失效）", "File expiry (stops after that UTC day)")<input type="date" name="expires" @bind="offlineDate" /></label>
+                <div class="row">
+                    <button type="submit">@Ui.T("生成离线授权文件", "Create offline grant")</button>
+                    @if (!detail.IsPerpetual && detail.SubscriptionEndsAt != null)
+                    {
+                        <button type="button" @onclick="UseSubscriptionEnd">@Ui.T("直到订阅结束日", "Until subscription end")</button>
+                    }
+                </div>
+            </form>
+        }
+    }
+    <h2>@Ui.T("激活", "Activations")</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>@Ui.T("机器码", "Machine")</th>
+                <th>@Ui.T("上次心跳 (UTC)", "Last heartbeat (UTC)")</th>
+                <th>@Ui.T("时钟回拨", "Clock rollback")</th>
+                <th>@Ui.T("版本号", "App version")</th>
+                <th>@Ui.T("快照差异", "Snapshot mismatch")</th>
+                <th></th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var row in detail.Activations)
+            {
+                <tr>
+                    <td>@row.MachineId</td>
+                    <td>@row.LastHeartbeatAt.UtcDateTime.ToString("yyyy-MM-dd HH:mm") @(row.ReleasedAt == null ? "" : Ui.T("已释放", "released"))</td>
+                    <td>@(row.LastClockRollbackAt?.UtcDateTime.ToString("yyyy-MM-dd HH:mm"))</td>
+                    <td>@row.AppVersion</td>
+                    <td>@(row.FeatureMismatch ? Ui.T("不一致", "Different") : "")</td>
+                    <td>
+                        @if (row.ReleasedAt == null)
+                        {
+                            <button @onclick="() => Release(row.Id)">@Ui.T("强制释放", "Force release")</button>
+                        }
+                    </td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [Parameter] public Guid LicenseId { get; set; }
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    LicenseView? detail;
+    string edition = "", featureText = "", person = "", dongleId = "", newMachine = "", offlineMachine = "", message = "";
+    DateOnly? endDate;
+    DateOnly offlineDate;
+    int seats, graceDays, heartbeatHours, releaseHours, rehostLimit;
+    bool perpetual = true, failed;
+
+    protected override async Task OnParametersSetAsync() => await Load();
+
+    async Task Load()
+    {
+        var state = await AuthState;
+        detail = await Admin.LicenseAsync(state.User, LicenseId);
+        if (detail == null)
+            return;
+        edition = detail.EditionCode;
+        featureText = string.Join(", ", detail.Features);
+        person = detail.PersonLabel ?? "";
+        dongleId = detail.DongleId ?? "";
+        perpetual = detail.IsPerpetual;
+        endDate = detail.SubscriptionEndsAt == null ? null : DateOnly.FromDateTime(detail.SubscriptionEndsAt.Value.UtcDateTime);
+        seats = detail.SeatLimit;
+        graceDays = detail.GraceDays;
+        heartbeatHours = detail.HeartbeatHours;
+        releaseHours = detail.ReleaseHours;
+        rehostLimit = detail.RehostLimitPerYear;
+        offlineDate = DefaultOfflineDate(detail);
+        var query = Microsoft.AspNetCore.WebUtilities.QueryHelpers.ParseQuery(new Uri(Nav.Uri).Query);
+        if (query.TryGetValue("m", out var note) && !string.IsNullOrWhiteSpace(note))
+            Show(note.ToString());
+    }
+
+    static DateOnly DefaultOfflineDate(LicenseView license)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var plus = today.AddDays(365);
+        if (license.IsPerpetual || license.SubscriptionEndsAt == null)
+            return plus;
+        var end = DateOnly.FromDateTime(license.SubscriptionEndsAt.Value.UtcDateTime);
+        return end < plus ? end : plus;
+    }
+
+    void UseSubscriptionEnd()
+    {
+        if (detail?.SubscriptionEndsAt == null)
+            return;
+        offlineDate = DateOnly.FromDateTime(detail.SubscriptionEndsAt.Value.UtcDateTime);
+    }
+
+    async Task Save()
+    {
+        var state = await AuthState;
+        DateTimeOffset? ends = perpetual || endDate == null
+            ? null
+            : new DateTimeOffset(endDate.Value.ToDateTime(new TimeOnly(23, 59, 59)), TimeSpan.Zero);
+        var error = await Admin.UpdateAsync(state.User, new LicenseEdit
+        {
+            Id = LicenseId,
+            EditionCode = edition,
+            FeatureCodes = featureText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList(),
+            SeatLimit = seats,
+            PersonLabel = person,
+            IsPerpetual = perpetual,
+            SubscriptionEndsAt = ends,
+            GraceDays = graceDays,
+            HeartbeatHours = heartbeatHours,
+            ReleaseHours = releaseHours,
+            RehostLimitPerYear = rehostLimit,
+            DongleId = dongleId
+        });
+        Show(error);
+        if (error == null)
+            await Load();
+    }
+
+    async Task Suspend() => await Status(LicenseState.Suspended);
+    async Task Resume() => await Status(LicenseState.Active);
+    async Task Revoke() => await Status(LicenseState.Revoked);
+
+    async Task Status(LicenseState next)
+    {
+        var state = await AuthState;
+        Show(await Admin.SetStatusAsync(state.User, LicenseId, next));
+        await Load();
+    }
+
+    async Task Release(Guid id)
+    {
+        var state = await AuthState;
+        Show(await Admin.ForceReleaseAsync(state.User, id));
+        await Load();
+    }
+
+    async Task Move()
+    {
+        var state = await AuthState;
+        Show(await Admin.AdminMoveAsync(state.User, LicenseId, newMachine));
+        await Load();
+    }
+
+    void Show(string? error)
+    {
+        failed = error != null;
+        message = error ?? Ui.T("已保存。", "Saved.");
+    }
+}

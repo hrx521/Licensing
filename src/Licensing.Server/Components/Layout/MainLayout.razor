@@ -1,0 +1,47 @@
+﻿@inherits LayoutComponentBase
+@inject NavigationManager Nav
+
+<div class="shell">
+    <nav>
+        <strong>Licensing</strong>
+        <AuthorizeView>
+            <Authorized>
+                <NavLink href="" Match="NavLinkMatch.All">@Ui.T("概览", "Overview")</NavLink>
+                <NavLink href="customers">@Ui.T("客户", "Customers")</NavLink>
+                <NavLink href="import">@Ui.T("导入老码", "Import codes")</NavLink>
+                <NavLink href="audit">@Ui.T("审计", "Audit")</NavLink>
+                @if (context.User.HasClaim("super", "1"))
+                {
+                    <NavLink href="products">@Ui.T("产品目录", "Catalog")</NavLink>
+                    <NavLink href="staff">@Ui.T("账号", "Accounts")</NavLink>
+                    <NavLink href="keys">@Ui.T("签名密钥", "Signing keys")</NavLink>
+                }
+                <span class="who">@context.User.Identity?.Name</span>
+                <form method="post" action="/account/logout" data-enhance="false">
+                    <button type="submit">@Ui.T("退出", "Sign out")</button>
+                </form>
+            </Authorized>
+        </AuthorizeView>
+        <div class="langs">
+            <a href="@Culture("zh-CN")">中文</a>
+            <a href="@Culture("en")">English</a>
+        </div>
+    </nav>
+    <main>
+        @Body
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    @Ui.T("页面发生错误。", "The page hit an error.")
+    <a href="." class="reload">@Ui.T("重新加载", "Reload")</a>
+    <span class="dismiss">×</span>
+</div>
+
+@code {
+    string Culture(string culture)
+    {
+        var path = new Uri(Nav.Uri).PathAndQuery;
+        return "/culture?culture=" + culture + "&redirectUri=" + Uri.EscapeDataString(path);
+    }
+}

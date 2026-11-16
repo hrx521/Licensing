@@ -1,0 +1,71 @@
+@page "/products"
+@attribute [Authorize(Policy = "SuperAdmin")]
+@inject LicenseAdminService Admin
+
+<PageTitle>@Ui.T("产品目录", "Catalog")</PageTitle>
+<h1>@Ui.T("产品目录", "Catalog")</h1>
+<p class="hint">@Ui.T("这里登记可以签发的程序、版本和功能。桌面程序启动时带上产品标识。", "Register the programs, editions, and features you can issue. The desktop program sends the product id.")</p>
+@if (!string.IsNullOrEmpty(error))
+{
+    <p class="err">@error</p>
+}
+<form class="row" @onsubmit="AddProduct">
+    <input @bind="publicId" placeholder="@Ui.T("产品标识", "Product id")" />
+    <input @bind="productName" placeholder="@Ui.T("显示名", "Display name")" />
+    <button type="submit">@Ui.T("添加产品", "Add product")</button>
+</form>
+@foreach (var product in products)
+{
+    <section>
+        <h2>@product.Name <code>@product.PublicId</code></h2>
+        <p>@Ui.T("版本", "Editions"): @string.Join("，", product.Editions.Select(x => x.Name + " (" + x.Code + ")"))</p>
+        <p>@Ui.T("功能", "Features"): @string.Join("，", product.Features.Select(x => x.Name + " (" + x.Code + ")"))</p>
+        <form class="row" @onsubmit="() => AddEdition(product.Id)">
+            <input @bind="editionCode" placeholder="@Ui.T("版本代码", "Edition code")" />
+            <input @bind="editionName" placeholder="@Ui.T("版本名称", "Edition name")" />
+            <button type="submit">@Ui.T("添加版本", "Add edition")</button>
+        </form>
+        <form class="row" @onsubmit="() => AddFeature(product.Id)">
+            <input @bind="featureCode" placeholder="@Ui.T("功能代码", "Feature code")" />
+            <input @bind="featureName" placeholder="@Ui.T("功能名称", "Feature name")" />
+            <button type="submit">@Ui.T("添加功能", "Add feature")</button>
+        </form>
+    </section>
+}
+
+@code {
+    List<ProductDetail> products = new();
+    string publicId = "", productName = "", editionCode = "", editionName = "", featureCode = "", featureName = "", error = "";
+
+    protected override async Task OnInitializedAsync() => products = await Admin.ProductsAsync();
+
+    async Task AddProduct()
+    {
+        error = await Admin.AddProductAsync(new System.Security.Claims.ClaimsPrincipal(), publicId, productName) ?? "";
+        if (error.Length == 0)
+        {
+            publicId = productName = "";
+            products = await Admin.ProductsAsync();
+        }
+    }
+
+    async Task AddEdition(Guid id)
+    {
+        error = await Admin.AddEditionAsync(id, editionCode, editionName) ?? "";
+        if (error.Length == 0)
+        {
+            editionCode = editionName = "";
+            products = await Admin.ProductsAsync();
+        }
+    }
+
+    async Task AddFeature(Guid id)
+    {
+        error = await Admin.AddFeatureAsync(id, featureCode, featureName) ?? "";
+        if (error.Length == 0)
+        {
+            featureCode = featureName = "";
+            products = await Admin.ProductsAsync();
+        }
+    }
+}

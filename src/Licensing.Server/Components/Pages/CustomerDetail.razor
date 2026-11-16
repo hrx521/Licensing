@@ -1,0 +1,79 @@
+@page "/customers/{CustomerId:guid}"
+@attribute [Authorize]
+@inject LicenseAdminService Admin
+
+<PageTitle>@Ui.T("客户", "Customer")</PageTitle>
+@if (row == null)
+{
+    <p>@Ui.T("没有这个客户，或当前账号看不见。", "This customer is missing or hidden from this account.")</p>
+}
+else
+{
+    <h1>@row.Name</h1>
+    @if (!string.IsNullOrEmpty(error))
+    {
+        <p class="err">@error</p>
+    }
+    <form class="grid-form" @onsubmit="Save">
+        <label>@Ui.T("名称", "Name")<input @bind="name" /></label>
+        <label>@Ui.T("邮箱", "Email")<input @bind="email" /></label>
+        <label>@Ui.T("公司", "Company")<input @bind="company" /></label>
+        <label>@Ui.T("电话", "Phone")<input @bind="phone" /></label>
+        <label>@Ui.T("备注", "Notes")<textarea @bind="notes"></textarea></label>
+        <button type="submit">@Ui.T("保存", "Save")</button>
+        <a class="button" href="@($"customers/{CustomerId}/licenses/new")">@Ui.T("签发许可", "Issue license")</a>
+    </form>
+    <h2>@Ui.T("许可", "Licenses")</h2>
+    <table>
+        <thead>
+            <tr>
+                <th>@Ui.T("许可码", "Key")</th>
+                <th>@Ui.T("种类", "Kind")</th>
+                <th>@Ui.T("状态", "Status")</th>
+                <th>@Ui.T("版本", "Edition")</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var license in licenses)
+            {
+                <tr>
+                    <td><a href="@($"licenses/{license.Id}")"><code>@license.KeyDisplay</code></a></td>
+                    <td>@Ui.Kind(license.Kind)</td>
+                    <td>@Ui.State(license.Status)</td>
+                    <td>@license.EditionCode</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    [Parameter] public Guid CustomerId { get; set; }
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+
+    CustomerRow? row;
+    List<LicenseRow> licenses = new();
+    string name = "", email = "", company = "", phone = "", notes = "", error = "";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        var state = await AuthState;
+        row = await Admin.CustomerAsync(state.User, CustomerId);
+        if (row == null)
+            return;
+        name = row.Name;
+        email = row.Email ?? "";
+        company = row.Company ?? "";
+        phone = row.Phone ?? "";
+        notes = row.Notes ?? "";
+        licenses = await Admin.LicensesForCustomerAsync(state.User, CustomerId);
+    }
+
+    async Task Save()
+    {
+        var state = await AuthState;
+        error = await Admin.SaveCustomerAsync(state.User, CustomerId, name, email, company, phone, notes) ?? "";
+        if (error.Length == 0)
+            await OnParametersSetAsync();
+    }
+}

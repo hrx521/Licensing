@@ -1,0 +1,42 @@
+@page "/keys"
+@attribute [Authorize(Policy = "SuperAdmin")]
+@inject LicenseAdminService Admin
+@inject SigningService Signing
+@inject AuditService Audit
+@inject IDbContextFactory<AppDbContext> Factory
+
+<PageTitle>@Ui.T("签名密钥", "Signing keys")</PageTitle>
+<h1>@Ui.T("签名密钥", "Signing keys")</h1>
+<p>@Ui.T("客户端只需要公钥文件。私钥留在服务器的 data/keys 目录。", "The client only needs the public key file. Private keys stay in the server data/keys directory.")</p>
+<p><code>@Signing.PublicKeyPath</code></p>
+@if (!string.IsNullOrEmpty(message))
+{
+    <p class="ok">@message</p>
+}
+<ul>
+    @foreach (var key in keys)
+    {
+        <li><code>@key.Code</code> @(key.Name == "current" ? Ui.T("当前", "current") : Ui.T("历史", "previous"))</li>
+    }
+</ul>
+<button @onclick="Rotate">@Ui.T("轮换密钥", "Rotate key")</button>
+<p class="hint">@Ui.T("轮换后，已发出的客户端必须带上新的公钥才能验证新许可。旧公钥继续验证旧许可。", "After rotation, shipped clients must include the new public key before new licenses will verify. Older public keys keep verifying older licenses.")</p>
+
+@code {
+    [CascadingParameter] private Task<AuthenticationState> AuthState { get; set; } = default!;
+    List<CodeName> keys = new();
+    string message = "";
+
+    protected override async Task OnInitializedAsync() => keys = await Admin.SigningKeysAsync();
+
+    async Task Rotate()
+    {
+        var state = await AuthState;
+        await using var db = await Factory.CreateDbContextAsync();
+        Signing.Rotate(db);
+        var id = state.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        await Audit.WriteAsync(id, "KeyRotate", null, null, Signing.CurrentKid);
+        message = Ui.T("已生成新密钥。", "A new key was created.");
+        keys = await Admin.SigningKeysAsync();
+    }
+}
